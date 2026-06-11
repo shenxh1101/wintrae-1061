@@ -1,12 +1,14 @@
 const STORAGE_KEYS = {
-  PATIENT_DATA: 'patient_data',
+  PATIENT_ARCHIVES: 'patient_archives',
+  CURRENT_PATIENT_KEY: 'current_patient_key',
   USER_TEMPLATES: 'user_templates',
   SNIPPETS: 'snippets',
   DEPARTMENT: 'current_department',
   HISTORY: 'operation_history',
   ENABLED_SITES: 'enabled_sites',
   ORDER_DRAFTS: 'order_drafts',
-  FOLLOWUP_TEMPLATES: 'followup_templates'
+  FOLLOWUP_TEMPLATES: 'followup_templates',
+  PATIENT_DRAFTS: 'patient_drafts'
 };
 
 const DEFAULT_SNIPPETS = {
@@ -147,6 +149,12 @@ async function initStorage() {
   if (!stored[STORAGE_KEYS.ORDER_DRAFTS]) {
     await chrome.storage.local.set({ [STORAGE_KEYS.ORDER_DRAFTS]: [] });
   }
+  if (!stored[STORAGE_KEYS.PATIENT_ARCHIVES]) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.PATIENT_ARCHIVES]: {} });
+  }
+  if (!stored[STORAGE_KEYS.PATIENT_DRAFTS]) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.PATIENT_DRAFTS]: {} });
+  }
 }
 
 async function addHistory(action, detail) {
@@ -195,18 +203,26 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (tab && tab.id && tab.url) {
       const enabled = await isSiteEnabled(tab.url);
       if (enabled) {
-        chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR', force: true });
+        chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR', force: true, action: 'open' });
       } else {
-        chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR', force: true, modal: 'SETTINGS' });
         chrome.notifications?.create({
           type: 'basic',
           iconUrl: 'icons/icon48.png',
           title: '智慧医疗助手',
-          message: '当前页面未在启用白名单，已打开设置页面'
+          message: '当前页面未启用，请先在插件弹窗中配置白名单。',
+          buttons: [{ title: '打开设置' }]
         });
       }
     }
   }
+});
+
+chrome.notifications.onButtonClicked?.addListener(() => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0] && tabs[0].id) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'TOGGLE_SIDEBAR', force: true, action: 'open', modal: 'SETTINGS' });
+    }
+  });
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

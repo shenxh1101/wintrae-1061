@@ -148,27 +148,37 @@
   }
 
   function toggleSidebar(options = {}) {
-    if (!siteEnabled && !options.force) {
-      if (!sidebarContainer) {
-        createSidebar();
-      }
-      isSidebarVisible = !isSidebarVisible;
-      if (isSidebarVisible) {
-        sidebarContainer.style.width = '420px';
-        sendMessageToSidebar({ type: 'SIDEBAR_OPENED', siteEnabled: false });
-      } else {
-        sidebarContainer.style.width = '0';
-      }
+    const { force = false, action = 'toggle', panel = null, modal = null } = options;
+
+    if (!siteEnabled && !force) {
       return;
     }
 
     if (!sidebarContainer) {
       createSidebar();
     }
-    isSidebarVisible = !isSidebarVisible;
-    if (isSidebarVisible) {
+
+    let shouldOpen;
+    if (action === 'open') {
+      shouldOpen = true;
+    } else if (action === 'close') {
+      shouldOpen = false;
+    } else {
+      shouldOpen = !isSidebarVisible;
+    }
+
+    isSidebarVisible = shouldOpen;
+
+    if (shouldOpen) {
       sidebarContainer.style.width = '420px';
-      sendMessageToSidebar({ type: 'SIDEBAR_OPENED', siteEnabled: true });
+      setTimeout(() => {
+        sendMessageToSidebar({
+          type: 'SIDEBAR_OPENED',
+          siteEnabled,
+          panel,
+          modal
+        });
+      }, 50);
     } else {
       sidebarContainer.style.width = '0';
       sendMessageToSidebar({ type: 'SIDEBAR_CLOSED' });
@@ -410,10 +420,6 @@
     if (isElementStillValid(lastEditableElement)) {
       return lastEditableElement;
     }
-    const textareas = document.querySelectorAll('textarea');
-    if (textareas.length > 0) return textareas[textareas.length - 1];
-    const inputs = document.querySelectorAll('input[type="text"]');
-    if (inputs.length > 0) return inputs[inputs.length - 1];
     return null;
   }
 
@@ -616,7 +622,7 @@
         });
         break;
       case 'CLOSE_SIDEBAR':
-        toggleSidebar();
+        toggleSidebar({ action: 'close', force: true });
         break;
       case 'OPEN_PANEL':
         if (!isSidebarVisible) toggleSidebar({ force: true });
@@ -629,34 +635,52 @@
           siteEnabled
         });
         break;
+      case 'REFRESH_SITE_STATUS':
+        sendMessageToBackground({ type: 'IS_SITE_ENABLED', url: location.href }).then((resp) => {
+          const wasEnabled = siteEnabled;
+          siteEnabled = !!(resp && resp.enabled);
+          if (wasEnabled !== siteEnabled) {
+            const floatBtn = document.getElementById('med-assist-float-btn');
+            if (siteEnabled && !floatBtn) {
+              createFloatingButton();
+            } else if (!siteEnabled && floatBtn) {
+              floatBtn.remove();
+            }
+            sendMessageToSidebar({ type: 'SITE_STATUS_UPDATED', siteEnabled });
+            if (!siteEnabled && isSidebarVisible) {
+              toggleSidebar({ action: 'close', force: true });
+            }
+          }
+        });
+        break;
     }
   });
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       if (request.type === 'TOGGLE_SIDEBAR') {
-        if (!siteEnabled && !request.force) {
-          if (!sidebarContainer) createSidebar();
-          isSidebarVisible = !isSidebarVisible;
-          if (isSidebarVisible) {
-            sidebarContainer.style.width = '420px';
-            sendMessageToSidebar({ type: 'SIDEBAR_OPENED', siteEnabled: false });
-          } else {
-            sidebarContainer.style.width = '0';
-          }
-        } else {
-          toggleSidebar({ force: request.force });
+        const action = request.action || 'toggle';
+        const force = request.force || (request.modal ? true : false);
+        
+        if (!siteEnabled && !force) {
+          sendResponse({ success: false, siteEnabled, reason: 'site_disabled' });
+          return;
         }
-        if (request.panel && isSidebarVisible) {
-          setTimeout(() => sendMessageToSidebar({ type: 'SWITCH_PANEL', panel: request.panel }), 150);
-        }
-        if (request.modal && isSidebarVisible) {
-          setTimeout(() => sendMessageToSidebar({ type: `OPEN_${request.modal.toUpperCase()}` }), 200);
-        }
-        sendResponse({ success: true, siteEnabled });
+
+        toggleSidebar({
+          force,
+          action,
+          panel: request.panel,
+          modal: request.modal
+        });
+        sendResponse({ success: true, siteEnabled, visible: isSidebarVisible });
       } else if (request.type === 'CHECK_SITE_ENABLED') {
         sendResponse({ success: true, enabled: siteEnabled });
       } else if (request.type === 'DIRECT_CAPTURE') {
+        if (!siteEnabled) {
+          sendResponse({ success: false, reason: 'site_disabled' });
+          return;
+        }
         captureScreenshotWithPrivacy().then((dataUrl) => {
           if (dataUrl) {
             const a = document.createElement('a');
@@ -669,7 +693,20 @@
         });
         return true;
       } else if (request.type === 'DIRECT_REFRESH') {
+        if (!siteEnabled) {
+          sendResponse({ success: false, reason: 'site_disabled' });
+          return;
+        }
         extractAndSendPageData();
+        sendResponse({ success: true });
+      } else if (request.type === 'SITE_ENABLED_UPDATED') {
+        siteEnabled = request.enabled;
+        const floatBtn = document.getElementById('med-assist-float-btn');
+        if (siteEnabled && !floatBtn) {
+          createFloatingButton();
+        } else if (!siteEnabled && floatBtn) {
+          floatBtn.remove();
+        }
         sendResponse({ success: true });
       }
     })();

@@ -23,6 +23,7 @@ function openPanel(panel, modal = null) {
     if (tabs[0] && tabs[0].id) {
       chrome.tabs.sendMessage(tabs[0].id, {
         type: 'TOGGLE_SIDEBAR',
+        action: 'open',
         panel,
         modal,
         force: true

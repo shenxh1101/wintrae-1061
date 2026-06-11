@@ -2,14 +2,16 @@
   'use strict';
 
   const STORAGE_KEYS = {
-    PATIENT_DATA: 'patient_data',
+    PATIENT_ARCHIVES: 'patient_archives',
+    CURRENT_PATIENT_KEY: 'current_patient_key',
     USER_TEMPLATES: 'user_templates',
     SNIPPETS: 'snippets',
     DEPARTMENT: 'current_department',
     HISTORY: 'operation_history',
     ENABLED_SITES: 'enabled_sites',
     ORDER_DRAFTS: 'order_drafts',
-    FOLLOWUP_TEMPLATES: 'followup_templates'
+    FOLLOWUP_TEMPLATES: 'followup_templates',
+    PATIENT_DRAFTS: 'patient_drafts'
   };
 
   let currentPageData = null;
@@ -20,8 +22,13 @@
     userTemplates: [],
     orderDrafts: [],
     followupTemplates: [],
-    history: []
+    history: [],
+    patientArchives: {},
+    patientDrafts: {},
+    currentPatientKey: null
   };
+
+  let currentArchivePatient = null;
 
   const $ = (id) => document.getElementById(id);
   const els = {};
@@ -55,6 +62,9 @@
       state.orderDrafts = d[STORAGE_KEYS.ORDER_DRAFTS] || [];
       state.followupTemplates = d[STORAGE_KEYS.FOLLOWUP_TEMPLATES] || [];
       state.history = d[STORAGE_KEYS.HISTORY] || [];
+      state.patientArchives = d[STORAGE_KEYS.PATIENT_ARCHIVES] || {};
+      state.patientDrafts = d[STORAGE_KEYS.PATIENT_DRAFTS] || {};
+      state.currentPatientKey = d[STORAGE_KEYS.CURRENT_PATIENT_KEY] || null;
     }
   }
 
@@ -92,30 +102,32 @@
     const tabs = document.querySelectorAll('.tab');
     if (!isSiteEnabled) {
       tabs.forEach(t => {
-        if (t.dataset.tab !== 'summary' && t.dataset.tab !== 'snippet') {
-          t.style.opacity = '0.5';
-          t.style.pointerEvents = 'none';
-        }
+        t.style.opacity = '0.3';
+        t.style.pointerEvents = 'none';
       });
       const overlay = $('siteRestrictionOverlay');
       if (!overlay) {
         const o = document.createElement('div');
         o.id = 'siteRestrictionOverlay';
-        o.style.cssText = 'position:absolute;inset:48px 0 0 0;background:rgba(255,255,255,0.96);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center;';
+        o.style.cssText = 'position:absolute;inset:0;background:rgba(255,255,255,0.98);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center;';
         o.innerHTML = `
-          <div style="font-size:48px;margin-bottom:16px;">🔒</div>
-          <h3 style="font-size:16px;color:#1e293b;margin-bottom:8px;">当前页面非院内系统</h3>
-          <p style="font-size:12px;color:#64748b;margin-bottom:20px;line-height:1.6;">
+          <div style="font-size:56px;margin-bottom:18px;">🔒</div>
+          <h3 style="font-size:16px;color:#1e293b;margin-bottom:10px;">当前页面非院内系统</h3>
+          <p style="font-size:12px;color:#64748b;margin-bottom:24px;line-height:1.7;max-width:280px;">
             智慧医疗助手仅在配置的院内页面提供完整功能，<br>避免干扰您的正常工作。
           </p>
-          <div style="display:flex;gap:10px;">
-            <button class="mini-btn primary" id="goSettingsFromOverlay">去配置白名单</button>
+          <div style="display:flex;flex-direction:column;gap:10px;width:220px;">
+            <button class="btn-block primary" id="goSettingsFromOverlay" style="margin:0;">去配置白名单</button>
+            <button class="btn-block secondary" id="closeSidebarFromOverlay" style="margin:0;">关闭侧边栏</button>
           </div>
         `;
         document.querySelector('.app').style.position = 'relative';
         document.querySelector('.app').appendChild(o);
         o.querySelector('#goSettingsFromOverlay').onclick = () => {
           showSettingsModal('settings');
+        };
+        o.querySelector('#closeSidebarFromOverlay').onclick = () => {
+          sendToContent({ type: 'CLOSE_SIDEBAR' });
         };
       }
     } else {
@@ -164,6 +176,215 @@
       .replace(/1[3-9]\d{9}/g, (m) => m.slice(0, 3) + '****' + m.slice(7))
       .replace(/\d{17}[\dXx]/g, (m) => m.slice(0, 4) + '********' + m.slice(-4))
       .replace(/\d{15}/g, (m) => m.slice(0, 4) + '*******' + m.slice(-4));
+  }
+
+  function getPatientKey() {
+    const p = (currentPageData && currentPageData.patient) || {};
+    if (p.idCard) return `id_${p.idCard.slice(0, 6)}****${p.idCard.slice(-4)}`;
+    if (p.phone) return `phone_${p.phone.slice(0, 3)}****${p.phone.slice(-4)}`;
+    if (p.name && p.age && p.gender) return `name_${p.name}_${p.age}_${p.gender}`;
+    if (p.name) return `name_${p.name}_${new Date().toDateString()}`;
+    return null;
+  }
+
+  function getCurrentArchive() {
+    const key = getPatientKey();
+    if (!key) return null;
+    return state.patientArchives[key] || null;
+  }
+
+  async function saveCurrentArchive(data) {
+    const key = getPatientKey();
+    if (!key) { toast('无法识别患者身份', 'warning'); return false; }
+    
+    const archive = state.patientArchives[key] || { versions: [] };
+    const version = {
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      ...data
+    };
+    archive.versions.unshift(version);
+    if (archive.versions.length > 20) archive.versions = archive.versions.slice(0, 20);
+    archive.latest = version;
+    archive.patient = { ...(currentPageData && currentPageData.patient) };
+    
+    state.patientArchives[key] = archive;
+    await saveStorage(STORAGE_KEYS.PATIENT_ARCHIVES, state.patientArchives);
+    return true;
+  }
+
+  function showArchiveEditor() {
+    const archive = getCurrentArchive();
+    const latest = archive && archive.latest;
+    const p = (currentPageData && currentPageData.patient) || {};
+    
+    if (!getPatientKey()) {
+      toast('请先识别到患者信息', 'warning');
+      return;
+    }
+
+    const modal = $('modal');
+    $('modalTitle').textContent = '编辑就诊档案';
+    $('modalBody').innerHTML = `
+      <div style="padding:6px 2px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:12px;">
+          👤 <strong>${escapeHtml(p.name || '未识别')}</strong>
+          ${p.gender ? ` · ${escapeHtml(p.gender)}` : ''}
+          ${p.age ? ` · ${escapeHtml(p.age)}岁` : ''}
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">主诉</label>
+          <textarea class="form-textarea" id="archiveChiefComplaint" rows="2" placeholder="例如：反复咳嗽3天，伴发热1天">${escapeHtml(latest?.chiefComplaint || '')}</textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">现病史</label>
+          <textarea class="form-textarea" id="archiveHistoryPresent" rows="4" placeholder="详细描述发病情况、诊疗经过、目前情况...">${escapeHtml(latest?.historyPresent || '')}</textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">过敏史</label>
+          <textarea class="form-textarea" id="archiveAllergies" rows="2" placeholder="例如：青霉素过敏、海鲜过敏">${escapeHtml(latest?.allergies || '')}</textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">处理意见</label>
+          <textarea class="form-textarea" id="archivePlan" rows="4" placeholder="诊断、处理方案、用药、检查建议...">${escapeHtml(latest?.plan || '')}</textarea>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">备注</label>
+          <textarea class="form-textarea" id="archiveNote" rows="2" placeholder="其他需要记录的信息">${escapeHtml(latest?.note || '')}</textarea>
+        </div>
+        
+        ${archive && archive.versions && archive.versions.length > 1 ? `
+          <div class="form-group">
+            <label class="form-label">历史版本（共 ${archive.versions.length} 版）</label>
+            <select class="form-select" id="archiveVersionSelect">
+              <option value="">—— 选择历史版本查看 ——</option>
+              ${archive.versions.map((v, i) => 
+                `<option value="${v.id}">${i === 0 ? '【当前】 ' : ''}${new Date(v.timestamp).toLocaleString()}</option>`
+              ).join('')}
+            </select>
+          </div>
+        ` : ''}
+        
+        <div class="modal-actions" style="margin-top:16px;">
+          <button class="btn-block secondary" id="archiveCancelBtn">取消</button>
+          <button class="btn-block primary" id="archiveSaveBtn">保存档案</button>
+        </div>
+      </div>
+    `;
+    modal.classList.add('show');
+
+    $('archiveCancelBtn').onclick = () => modal.classList.remove('show');
+    
+    const versionSel = $('archiveVersionSelect');
+    if (versionSel) {
+      versionSel.onchange = () => {
+        const vid = versionSel.value;
+        if (!vid) return;
+        const v = (archive.versions || []).find(x => x.id === vid);
+        if (v) {
+          $('archiveChiefComplaint').value = v.chiefComplaint || '';
+          $('archiveHistoryPresent').value = v.historyPresent || '';
+          $('archiveAllergies').value = v.allergies || '';
+          $('archivePlan').value = v.plan || '';
+          $('archiveNote').value = v.note || '';
+        }
+      };
+    }
+
+    $('archiveSaveBtn').onclick = async () => {
+      const data = {
+        chiefComplaint: $('archiveChiefComplaint').value.trim(),
+        historyPresent: $('archiveHistoryPresent').value.trim(),
+        allergies: $('archiveAllergies').value.trim(),
+        plan: $('archivePlan').value.trim(),
+        note: $('archiveNote').value.trim()
+      };
+      const ok = await saveCurrentArchive(data);
+      if (ok) {
+        toast('档案已保存', 'success');
+        addHistory('保存档案', `${p.name || '患者'} 就诊档案`);
+        modal.classList.remove('show');
+        renderPatientSummary();
+      }
+    };
+  }
+
+  function buildClinicNote(mask = true) {
+    const p = (currentPageData && currentPageData.patient) || {};
+    const archive = getCurrentArchive();
+    const latest = archive && archive.latest;
+    const diagnosis = (currentPageData && currentPageData.diagnosis) || [];
+    const medications = (currentPageData && currentPageData.medications) || [];
+    const labs = (currentPageData && currentPageData.labResults) || [];
+    const abnormal = labs.filter(l => l.abnormal);
+    const missing = getMissingChecksSuggestions();
+
+    const proc = (v) => mask ? maskText(v || '') : (v || '');
+
+    let note = '【门诊小结】\n';
+    note += `生成时间：${new Date().toLocaleString()}\n\n`;
+
+    note += '一、基本信息\n';
+    const basicItems = [
+      ['姓名', p.name], ['性别', p.gender], ['年龄', p.age],
+      ['科室', p.department], ['医生', p.doctor], ['就诊日期', p.visitDate],
+      ['电话', proc(p.phone)], ['身份证', proc(p.idCard)]
+    ].filter(([, v]) => v);
+    if (basicItems.length > 0) {
+      note += basicItems.map(([k, v]) => `${k}：${v}`).join('；') + '\n';
+    }
+
+    if (latest?.chiefComplaint) {
+      note += `\n二、主诉\n${latest.chiefComplaint}\n`;
+    }
+    if (latest?.historyPresent) {
+      note += `\n三、现病史\n${latest.historyPresent}\n`;
+    }
+    if (latest?.allergies) {
+      note += `\n四、过敏史\n${latest.allergies}\n`;
+    }
+
+    if (diagnosis.length > 0) {
+      note += '\n五、诊断\n';
+      diagnosis.forEach((d, i) => {
+        note += `${i + 1}. ${d.text}${d.date ? `（${d.date}）` : ''}\n`;
+      });
+    }
+
+    if (medications.length > 0) {
+      note += '\n六、用药\n';
+      medications.forEach((m, i) => {
+        note += `${i + 1}. ${m.name}\n`;
+      });
+    }
+
+    if (abnormal.length > 0) {
+      note += '\n七、异常检验值\n';
+      abnormal.forEach((r, i) => {
+        note += `${i + 1}. ${r.item}：${r.value}${r.unit || ''}${r.reference ? `（参考：${r.reference}）` : ''} ⚠️\n`;
+      });
+    }
+
+    if (latest?.plan) {
+      note += `\n八、处理意见\n${latest.plan}\n`;
+    }
+
+    if (missing.length > 0) {
+      note += '\n九、建议补充检查\n';
+      missing.forEach((m, i) => { note += `${i + 1}. ${m}\n`; });
+    }
+
+    if (latest?.note) {
+      note += `\n十、备注\n${latest.note}\n`;
+    }
+
+    note += '\n—— 智慧医疗助手生成 ——';
+    return note;
   }
 
   function getMissingChecksSuggestions() {
@@ -394,11 +615,180 @@
     renderDiagnosis();
     renderMedications();
     renderLabResults();
-    if (currentPageData && currentPageData.patient && Object.keys(currentPageData.patient).some(k => currentPageData.patient[k])) {
-      $('summaryNote').style.display = 'block';
+    
+    const archive = getCurrentArchive();
+    const statusEl = $('archiveStatus');
+    const statusText = $('archiveStatusText');
+    if (archive && archive.latest) {
+      statusEl.style.display = 'block';
+      statusText.textContent = `ℹ️ 已保存就诊档案（${archive.versions.length}版），最近更新：${new Date(archive.latest.timestamp).toLocaleString()}`;
     } else {
-      $('summaryNote').style.display = 'none';
+      statusEl.style.display = 'none';
     }
+  }
+
+  function renderClinicNote() {
+    const container = $('clinicNotePreview');
+    if (!currentPageData || !currentPageData.patient) {
+      container.innerHTML = '<div class="info-empty">暂未识别到患者数据，请先点击「重新识别」</div>';
+      return;
+    }
+    const note = buildClinicNote(true);
+    container.innerHTML = `
+      <pre style="margin:0;padding:12px 14px;font-family:inherit;font-size:12px;line-height:1.7;white-space:pre-wrap;color:#334155;background:var(--bg-secondary);border-radius:6px;">${escapeHtml(note)}</pre>
+      <div style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid var(--border-light);">
+        <button class="btn-block secondary" style="padding:8px 12px;font-size:12px;" id="refreshClinicNoteBtn">刷新</button>
+        <button class="btn-block primary" style="padding:8px 12px;font-size:12px;" id="copyClinicNoteBtn">复制脱敏小结</button>
+      </div>
+    `;
+    $('refreshClinicNoteBtn').onclick = renderClinicNote;
+    $('copyClinicNoteBtn').onclick = () => {
+      const text = buildClinicNote(true);
+      sendToContent({ type: 'COPY_TEXT', text });
+      addHistory('复制门诊小结', '脱敏门诊小结');
+    };
+  }
+
+  function getPatientDraft() {
+    const key = getPatientKey();
+    if (!key) return null;
+    return state.patientDrafts[key] || null;
+  }
+
+  async function savePatientDraft(type, content) {
+    const key = getPatientKey();
+    if (!key) { toast('请先识别到患者信息', 'warning'); return false; }
+    
+    const draft = state.patientDrafts[key] || {
+      patient: { ...(currentPageData && currentPageData.patient) },
+      updatedAt: new Date().toISOString()
+    };
+    draft[type] = content;
+    draft.updatedAt = new Date().toISOString();
+    draft.patient = { ...(currentPageData && currentPageData.patient) };
+    
+    state.patientDrafts[key] = draft;
+    await saveStorage(STORAGE_KEYS.PATIENT_DRAFTS, state.patientDrafts);
+    return true;
+  }
+
+  function loadPatientDraftToUI() {
+    const draft = getPatientDraft();
+    if (!draft) return;
+    
+    if (draft.order) $('orderEditor').value = draft.order;
+    if (draft.followup) $('followupEditor').value = draft.followup;
+  }
+
+  function buildMergedContent() {
+    const parts = [];
+    const order = $('orderEditor').value.trim();
+    const followup = $('followupEditor').value.trim();
+    
+    const checks = Array.from(document.querySelectorAll('#panel-checkup input[type="checkbox"]:checked'))
+      .map(c => c.value);
+    
+    if (order) parts.push(order);
+    
+    if (checks.length > 0) {
+      parts.push(`【检查建议】\n建议完善：${checks.join('、')}`);
+    }
+    
+    if (followup) parts.push(followup);
+    
+    return parts.join('\n\n');
+  }
+
+  function showMergeModal() {
+    const merged = buildMergedContent();
+    if (!merged.trim()) {
+      toast('没有可合并的内容', 'warning');
+      return;
+    }
+    
+    const modal = $('modal');
+    $('modalTitle').textContent = '合并内容预览';
+    $('modalBody').innerHTML = `
+      <div style="padding:4px 2px;">
+        <p style="font-size:12px;color:#64748b;margin-bottom:10px;">
+          已合并医嘱、检查建议和随访内容，可直接插入或复制：
+        </p>
+        <pre style="margin:0 0 14px;padding:10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;font-size:12px;line-height:1.6;white-space:pre-wrap;max-height:240px;overflow:auto;color:#1e293b;">${escapeHtml(merged)}</pre>
+        <div class="modal-actions">
+          <button class="btn-block secondary" id="mergeCancelBtn">取消</button>
+          <button class="btn-block secondary" id="mergeCopyBtn">复制文本</button>
+          <button class="btn-block primary" id="mergeInsertBtn">插入到编辑器</button>
+        </div>
+      </div>
+    `;
+    modal.classList.add('show');
+    
+    $('mergeCancelBtn').onclick = () => modal.classList.remove('show');
+    $('mergeCopyBtn').onclick = () => {
+      sendToContent({ type: 'COPY_TEXT', text: merged });
+      toast('已复制合并内容', 'success');
+      addHistory('复制合并内容', '医嘱+检查+随访');
+    };
+    $('mergeInsertBtn').onclick = () => {
+      sendToContent({ type: 'INSERT_TEXT', text: merged });
+      addHistory('插入合并内容', '医嘱+检查+随访');
+      modal.classList.remove('show');
+    };
+  }
+
+  function showPatientDraftsList() {
+    const drafts = Object.entries(state.patientDrafts)
+      .filter(([, d]) => d && d.patient)
+      .sort(([, a], [, b]) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    
+    const modal = $('modal');
+    $('modalTitle').textContent = '患者草稿箱';
+    $('modalBody').innerHTML = `
+      <div style="padding:4px 2px;max-height:360px;overflow:auto;">
+        ${drafts.length === 0 ? '<div class="info-empty">暂无患者草稿</div>' : drafts.map(([key, d]) => {
+          const p = d.patient || {};
+          return `
+            <div class="list-item" style="margin-bottom:6px;border:1px solid var(--border);border-radius:8px;padding:10px;">
+              <div class="item-content" style="flex:1;">
+                <div class="item-text" style="font-weight:500;">
+                  ${escapeHtml(p.name || '未命名患者')}
+                  ${p.gender ? ` · ${escapeHtml(p.gender)}` : ''}
+                  ${p.age ? ` · ${escapeHtml(p.age)}岁` : ''}
+                </div>
+                <div class="item-meta" style="font-size:11px;color:#94a3b8;">
+                  更新于 ${new Date(d.updatedAt).toLocaleString()}
+                </div>
+                <div style="font-size:11px;color:#64748b;margin-top:4px;">
+                  ${d.order ? '📝 医嘱 ' : ''}
+                  ${d.followup ? '📅 随访 ' : ''}
+                </div>
+              </div>
+              <button class="mini-btn" data-load-draft="${key}">载入</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="btn-block secondary" id="draftCloseBtn">关闭</button>
+      </div>
+    `;
+    modal.classList.add('show');
+    
+    $('draftCloseBtn').onclick = () => modal.classList.remove('show');
+    
+    document.querySelectorAll('[data-load-draft]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.loadDraft;
+        const d = state.patientDrafts[key];
+        if (d) {
+          if (d.order) $('orderEditor').value = d.order;
+          if (d.followup) $('followupEditor').value = d.followup;
+          toast('已载入患者草稿', 'success');
+          modal.classList.remove('show');
+          switchToPanel('order');
+        }
+      });
+    });
   }
 
   function setupOrderPanel() {
@@ -432,21 +822,35 @@
       $('orderEditor').value = '';
     });
 
-    $('saveOrderBtn').addEventListener('click', async () => {
+    $('savePatientDraftBtn').addEventListener('click', async () => {
       const text = $('orderEditor').value;
-      if (!text.trim()) { toast('请输入内容', 'warning'); return; }
-      state.orderDrafts.unshift({
-        id: Date.now().toString(),
-        content: text,
-        createdAt: new Date().toISOString()
-      });
-      state.orderDrafts = state.orderDrafts.slice(0, 20);
-      await saveStorage(STORAGE_KEYS.ORDER_DRAFTS, state.orderDrafts);
-      renderDrafts();
-      toast('草稿已保存', 'success');
+      const ok = await savePatientDraft('order', text);
+      if (ok) {
+        toast('已保存到患者草稿', 'success');
+        addHistory('保存患者草稿', '医嘱');
+        updatePatientDraftHint();
+      }
     });
 
+    $('draftListBtn').addEventListener('click', showPatientDraftsList);
+    $('mergeAllBtn').addEventListener('click', showMergeModal);
+
     renderDrafts();
+    updatePatientDraftHint();
+  }
+
+  function updatePatientDraftHint() {
+    const hint = $('patientDraftHint');
+    const nameEl = $('currentPatientName');
+    const draft = getPatientDraft();
+    const p = (currentPageData && currentPageData.patient) || {};
+    
+    if (p.name || draft) {
+      hint.style.display = 'block';
+      nameEl.textContent = p.name || '当前患者';
+    } else {
+      hint.style.display = 'none';
+    }
   }
 
   function renderDrafts() {
@@ -568,6 +972,15 @@
       sendToContent({ type: 'COPY_TEXT', text });
       addHistory('复制随访', text.substring(0, 50));
       toast('结构化内容已复制', 'success');
+    });
+
+    $('saveFollowupDraftBtn').addEventListener('click', async () => {
+      const text = $('followupEditor').value;
+      const ok = await savePatientDraft('followup', text);
+      if (ok) {
+        toast('随访已保存到患者草稿', 'success');
+        addHistory('保存患者草稿', '随访');
+      }
     });
 
     $('addTemplateBtn').addEventListener('click', () => showTemplateModal());
@@ -870,19 +1283,11 @@
     $('modalCloseBtn').addEventListener('click', () => $('modal').classList.remove('show'));
     $('modal').querySelector('.modal-mask').addEventListener('click', () => $('modal').classList.remove('show'));
 
-    $('editBasicBtn').addEventListener('click', showEditBasicModal);
-
-    if ($('copySummaryBtn')) {
-      $('copySummaryBtn').addEventListener('click', () => {
-        const text = buildStructuredSummary(true);
-        sendToContent({ type: 'COPY_TEXT', text });
-        addHistory('复制摘要', '一键复制脱敏门诊摘要');
-        toast('已复制结构化摘要（已脱敏）', 'success');
-      });
+    if ($('editArchiveBtn')) {
+      $('editArchiveBtn').addEventListener('click', showArchiveEditor);
     }
-
-    if ($('genSummaryBtn')) {
-      $('genSummaryBtn').addEventListener('click', renderStructuredSummary);
+    if ($('genClinicNoteBtn')) {
+      $('genClinicNoteBtn').addEventListener('click', renderClinicNote);
     }
   }
 
@@ -932,6 +1337,9 @@
         const sites = $('setSitesInput').value.split('\n').map(s => s.trim()).filter(Boolean);
         await saveStorage(STORAGE_KEYS.ENABLED_SITES, sites);
         renderSnippets();
+        
+        sendToContent({ type: 'REFRESH_SITE_STATUS' });
+        
         modal.classList.remove('show');
         toast('设置已保存', 'success');
       };
@@ -988,14 +1396,16 @@
         if (!resp || !resp.success) { toast('导出失败', 'danger'); return; }
         const d = resp.data;
         const exportData = {
-          version: 1,
+          version: 2,
           exportedAt: new Date().toISOString(),
           department: d[STORAGE_KEYS.DEPARTMENT],
           snippets: d[STORAGE_KEYS.SNIPPETS],
           userTemplates: d[STORAGE_KEYS.USER_TEMPLATES],
           orderDrafts: d[STORAGE_KEYS.ORDER_DRAFTS],
           followupTemplates: d[STORAGE_KEYS.FOLLOWUP_TEMPLATES],
-          enabledSites: d[STORAGE_KEYS.ENABLED_SITES]
+          enabledSites: d[STORAGE_KEYS.ENABLED_SITES],
+          patientArchives: d[STORAGE_KEYS.PATIENT_ARCHIVES],
+          patientDrafts: d[STORAGE_KEYS.PATIENT_DRAFTS]
         };
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -1068,6 +1478,16 @@
               renderTemplates();
               merged++;
             }
+            if (data.patientArchives && typeof data.patientArchives === 'object') {
+              state.patientArchives = Object.assign({}, state.patientArchives || {}, data.patientArchives);
+              await saveStorage(STORAGE_KEYS.PATIENT_ARCHIVES, state.patientArchives);
+              added += Object.keys(data.patientArchives).length;
+            }
+            if (data.patientDrafts && typeof data.patientDrafts === 'object') {
+              state.patientDrafts = Object.assign({}, state.patientDrafts || {}, data.patientDrafts);
+              await saveStorage(STORAGE_KEYS.PATIENT_DRAFTS, state.patientDrafts);
+              added += Object.keys(data.patientDrafts).length;
+            }
             $('ioStatus').innerHTML = `<span style="color:var(--success);">✅ 导入完成：更新 ${merged} 项，新增 ${added} 项</span>`;
             addHistory('导入数据', `更新${merged}项/新增${added}项`);
             setTimeout(() => { $('ioStatus').textContent = ''; }, 4000);
@@ -1139,6 +1559,20 @@
         currentPageData = msg.data;
         renderPatientSummary();
         updateMissingChecks();
+        if (typeof updatePatientDraftHint === 'function') {
+          updatePatientDraftHint();
+        }
+        const key = getPatientKey ? getPatientKey() : null;
+        if (key && state.patientDrafts && state.patientDrafts[key]) {
+          const d = state.patientDrafts[key];
+          const hasContent = (d.order && d.order.trim()) || (d.followup && d.followup.trim());
+          if (hasContent) {
+            const name = (d.patient && d.patient.name) || '当前患者';
+            setTimeout(() => {
+              toast(`发现 ${name} 的历史草稿，可在「患者草稿」中载入`, 'info');
+            }, 800);
+          }
+        }
         break;
       case 'COPY_SUCCESS':
         toast('已复制到剪贴板', 'success');
@@ -1158,6 +1592,15 @@
       case 'SIDEBAR_OPENED':
         isSiteEnabled = msg.siteEnabled !== false;
         updateSiteRestrictionUI();
+        if (msg.panel) {
+          setTimeout(() => switchToPanel(msg.panel), 50);
+        }
+        if (msg.modal) {
+          setTimeout(() => {
+            if (msg.modal === 'HISTORY') showSettingsModal('history');
+            else if (msg.modal === 'SETTINGS') showSettingsModal('settings');
+          }, 100);
+        }
         break;
       case 'SWITCH_PANEL':
         switchToPanel(msg.panel);
@@ -1177,6 +1620,13 @@
       case 'EDITOR_STATUS':
         isSiteEnabled = !!msg.siteEnabled;
         updateSiteRestrictionUI();
+        break;
+      case 'SITE_STATUS_UPDATED':
+        isSiteEnabled = !!msg.siteEnabled;
+        updateSiteRestrictionUI();
+        if (isSiteEnabled) {
+          sendToContent({ type: 'REFRESH_DATA' });
+        }
         break;
     }
   });
