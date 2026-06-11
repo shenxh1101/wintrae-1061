@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智慧医疗助手</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="header-left">
+        <span class="logo">🩺</span>
+        <div class="header-title">
+          <h1>智慧医疗助手</h1>
+          <span id="currentDeptLabel" class="dept-tag">内科</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="refreshBtn" title="重新识别">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+        <button class="icon-btn" id="captureBtn" title="隐私截图">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button class="icon-btn" id="settingsBtn" title="设置">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="icon-btn" id="closeBtn" title="关闭">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="summary">
+        <span class="tab-icon">👤</span>
+        <span>患者摘要</span>
+      </button>
+      <button class="tab" data-tab="order">
+        <span class="tab-icon">💊</span>
+        <span>医嘱草稿</span>
+      </button>
+      <button class="tab" data-tab="checkup">
+        <span class="tab-icon">🔬</span>
+        <span>检查提醒</span>
+      </button>
+      <button class="tab" data-tab="followup">
+        <span class="tab-icon">📅</span>
+        <span>随访模板</span>
+      </button>
+      <button class="tab" data-tab="snippet">
+        <span class="tab-icon">⚡</span>
+        <span>快捷片段</span>
+      </button>
+    </nav>
+
+    <main class="content">
+      <section class="tab-panel active" id="panel-summary">
+        <div class="panel-content">
+          <div class="card patient-card">
+            <div class="card-header">
+              <h3>基本信息</h3>
+              <button class="link-btn" id="editBasicBtn">编辑</button>
+            </div>
+            <div class="patient-basic" id="patientBasic">
+              <div class="info-empty">正在识别页面信息...</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>最近诊断 <span id="diagnosisCount" class="count-badge">0</span></h3>
+            </div>
+            <div class="list-group" id="diagnosisList">
+              <div class="info-empty">暂无诊断记录</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>近期用药 <span id="medicationCount" class="count-badge">0</span></h3>
+            </div>
+            <div class="list-group" id="medicationList">
+              <div class="info-empty">暂无用药记录</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>异常检验值 <span id="abnormalCount" class="count-badge danger">0</span></h3>
+            </div>
+            <div class="lab-list" id="labResultList">
+              <div class="info-empty">未检测到异常</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="panel-order">
+        <div class="panel-content">
+          <div class="card">
+            <div class="card-header">
+              <h3>医嘱编辑器</h3>
+              <div class="card-actions">
+                <button class="btn-sm secondary" id="clearOrderBtn">清空</button>
+                <button class="btn-sm primary" id="saveOrderBtn">保存草稿</button>
+              </div>
+            </div>
+            <textarea id="orderEditor" class="order-editor" placeholder="请输入医嘱内容，可使用快捷片段..."></textarea>
+            <div class="order-quick">
+              <span class="quick-label">快速插入：</span>
+              <button class="chip" data-order="注意休息，避免劳累。">休息</button>
+              <button class="chip" data-order="清淡饮食，忌辛辣刺激。">饮食</button>
+              <button class="chip" data-order="定期复查，不适随诊。">复诊</button>
+              <button class="chip" data-order="遵医嘱用药，切勿自行停药。">用药</button>
+              <button class="chip" data-order="完善相关检查，明确诊断。">检查</button>
+            </div>
+            <div class="order-actions-row">
+              <button class="btn-block primary" id="insertOrderBtn">插入到页面编辑器</button>
+              <button class="btn-block secondary" id="copyOrderBtn">复制文本</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>草稿箱 <span id="draftCount" class="count-badge">0</span></h3>
+            </div>
+            <div class="list-group" id="draftList">
+              <div class="info-empty">暂无保存的草稿</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="panel-checkup">
+        <div class="panel-content">
+          <div class="card">
+            <div class="card-header">
+              <h3>推荐检查项目</h3>
+            </div>
+            <div class="checkup-groups">
+              <div class="checkup-group">
+                <h4>常规检查</h4>
+                <div class="checkbox-list" id="routineChecks">
+                  <label class="checkbox-item"><input type="checkbox" value="血常规"><span>血常规</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="尿常规"><span>尿常规</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="大便常规"><span>大便常规</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="肝肾功能"><span>肝肾功能</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="电解质"><span>电解质</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="血糖"><span>血糖</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="血脂"><span>血脂四项</span></label>
+                </div>
+              </div>
+              <div class="checkup-group">
+                <h4>影像学</h4>
+                <div class="checkbox-list" id="imagingChecks">
+                  <label class="checkbox-item"><input type="checkbox" value="胸部X线"><span>胸部X线</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="胸部CT"><span>胸部CT</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="腹部B超"><span>腹部B超</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="心电图"><span>心电图</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="心脏彩超"><span>心脏彩超</span></label>
+                </div>
+              </div>
+              <div class="checkup-group">
+                <h4>专科检查</h4>
+                <div class="checkbox-list" id="specialChecks">
+                  <label class="checkbox-item"><input type="checkbox" value="肿瘤标志物"><span>肿瘤标志物</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="甲状腺功能"><span>甲状腺功能</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="糖化血红蛋白"><span>糖化血红蛋白</span></label>
+                  <label class="checkbox-item"><input type="checkbox" value="凝血功能"><span>凝血功能</span></label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card alert-card" id="missingChecksCard">
+            <div class="card-header">
+              <h3>⚠️ 缺失检查项提醒</h3>
+            </div>
+            <div class="list-group" id="missingChecksList">
+              <div class="info-empty">未识别到缺失项</div>
+            </div>
+          </div>
+
+          <div class="order-actions-row">
+            <button class="btn-block primary" id="genCheckupNoteBtn">生成检查建议</button>
+            <button class="btn-block secondary" id="copyCheckupBtn">复制已选项目</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="panel-followup">
+        <div class="panel-content">
+          <div class="card">
+            <div class="card-header">
+              <h3>复诊注意事项</h3>
+            </div>
+            <div class="form-row">
+              <label>复诊日期</label>
+              <input type="date" id="followupDate">
+            </div>
+            <div class="form-row">
+              <label>重点提醒</label>
+              <div class="checkbox-list">
+                <label class="checkbox-item"><input type="checkbox" value="空腹"><span>空腹就诊</span></label>
+                <label class="checkbox-item"><input type="checkbox" value="携带资料"><span>携带既往病历</span></label>
+                <label class="checkbox-item"><input type="checkbox" value="记录症状"><span>记录症状变化</span></label>
+                <label class="checkbox-item"><input type="checkbox" value="家属陪同"><span>建议家属陪同</span></label>
+              </div>
+            </div>
+            <textarea id="followupEditor" class="order-editor" placeholder="根据选择的模板编辑复诊注意事项..."></textarea>
+            <div class="order-actions-row">
+              <button class="btn-block primary" id="insertFollowupBtn">插入到页面编辑器</button>
+              <button class="btn-block secondary" id="copyFollowupBtn">复制结构化内容</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>随访模板库</h3>
+              <button class="link-btn" id="addTemplateBtn">+ 新建</button>
+            </div>
+            <div class="template-list" id="templateList">
+              <div class="info-empty">暂无模板</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="panel-snippet">
+        <div class="panel-content">
+          <div class="card">
+            <div class="card-header">
+              <h3>快捷片段库</h3>
+              <select id="deptSelector" class="dept-select">
+                <option value="内科">内科</option>
+                <option value="外科">外科</option>
+                <option value="儿科">儿科</option>
+                <option value="妇产科">妇产科</option>
+              </select>
+            </div>
+            <div class="search-box">
+              <input type="text" id="snippetSearch" placeholder="搜索片段...">
+            </div>
+            <div class="snippet-list" id="snippetList">
+              <div class="info-empty">暂无片段</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>我的模板</h3>
+              <button class="link-btn" id="addUserSnippetBtn">+ 新建</button>
+            </div>
+            <div class="snippet-list" id="userSnippetList">
+              <div class="info-empty">暂无自定义模板，点击"新建"添加</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal" id="modal">
+      <div class="modal-mask"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalTitle">标题</h3>
+          <button class="icon-btn" id="modalCloseBtn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body" id="modalBody"></div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="sidebar.js"></script>
+</body>
+</html>
