@@ -14,19 +14,35 @@
     .header {
       background: linear-gradient(135deg, #2563eb, #3b82f6);
       color: white;
-      padding: 20px;
+      padding: 18px 20px;
       text-align: center;
     }
+    .header.warn {
+      background: linear-gradient(135deg, #64748b, #475569);
+    }
     .header h1 {
-      font-size: 18px;
+      font-size: 17px;
       margin-bottom: 4px;
     }
     .header p {
       font-size: 12px;
       opacity: 0.9;
     }
+    .site-alert {
+      padding: 12px 16px;
+      background: #fff7ed;
+      border-bottom: 1px solid #fed7aa;
+      color: #9a3412;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .site-alert strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
     .actions {
-      padding: 16px;
+      padding: 14px 16px;
     }
     .btn {
       display: flex;
@@ -34,20 +50,20 @@
       justify-content: flex-start;
       gap: 12px;
       width: 100%;
-      padding: 12px 16px;
-      margin-bottom: 8px;
+      padding: 11px 14px;
+      margin-bottom: 7px;
       border: none;
       border-radius: 8px;
       background: white;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
       color: #1e293b;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       transition: all 0.2s;
     }
     .btn:hover {
       background: #eff6ff;
-      transform: translateX(4px);
+      transform: translateX(3px);
     }
     .btn .icon {
       width: 28px;
@@ -56,7 +72,18 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+    .btn .desc {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .btn-text {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
     }
     .btn-primary {
       background: linear-gradient(135deg, #2563eb, #3b82f6);
@@ -65,8 +92,18 @@
     .btn-primary:hover {
       background: linear-gradient(135deg, #1d4ed8, #2563eb);
     }
+    .btn-primary .desc {
+      color: rgba(255,255,255,0.8);
+    }
+    .btn-warn {
+      background: linear-gradient(135deg, #d97706, #f59e0b);
+      color: white;
+    }
+    .btn-warn:hover {
+      background: linear-gradient(135deg, #b45309, #d97706);
+    }
     .status-bar {
-      padding: 12px 16px;
+      padding: 11px 16px;
       border-top: 1px solid #e2e8f0;
       font-size: 12px;
       color: #64748b;
@@ -75,50 +112,44 @@
       align-items: center;
     }
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: #22c55e;
       display: inline-block;
-      margin-right: 6px;
+      margin-right: 5px;
     }
+    .status-dot.off { background: #94a3b8; }
     .ic-1 { background: #dbeafe; color: #2563eb; }
     .ic-2 { background: #fef3c7; color: #d97706; }
     .ic-3 { background: #fce7f3; color: #db2777; }
     .ic-4 { background: #d1fae5; color: #059669; }
     .ic-5 { background: #e0e7ff; color: #4f46e5; }
+    .ic-6 { background: #fed7aa; color: #c2410c; }
+    .btn-primary .ic-1, .btn-primary .ic-2, .btn-primary .ic-3,
+    .btn-primary .ic-4, .btn-primary .ic-5, .btn-primary .ic-6,
+    .btn-warn .ic-1, .btn-warn .ic-2, .btn-warn .ic-3,
+    .btn-warn .ic-4, .btn-warn .ic-5, .btn-warn .ic-6 {
+      background: rgba(255,255,255,0.25);
+      color: white;
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>🩺 智慧医疗助手</h1>
-    <p>医生门诊辅助工具</p>
-  </div>
-  <div class="actions">
-    <button class="btn btn-primary" id="openSidebar">
-      <span class="icon">📋</span>
-      <span>打开侧边栏面板</span>
-    </button>
-    <button class="btn" id="captureBtn">
-      <span class="icon ic-1">📷</span>
-      <span>隐私遮挡截图</span>
-    </button>
-    <button class="btn" id="refreshBtn">
-      <span class="icon ic-2">🔄</span>
-      <span>重新识别页面信息</span>
-    </button>
-    <button class="btn" id="historyBtn">
-      <span class="icon ic-4">📜</span>
-      <span>查看操作历史</span>
-    </button>
-    <button class="btn" id="settingsBtn">
-      <span class="icon ic-5">⚙️</span>
-      <span>设置 / 科室切换</span>
-    </button>
-  </div>
-  <div class="status-bar">
-    <span><span class="status-dot"></span>插件运行中</span>
-    <span id="currentDept">内科</span>
+  <div id="app">
+    <div class="header" id="header">
+      <h1>🩺 智慧医疗助手</h1>
+      <p id="headerSubtitle">医生门诊辅助工具</p>
+    </div>
+    <div id="siteAlert" class="site-alert" style="display:none;">
+      <strong>⚠️ 当前页面未启用</strong>
+      <span>检测到非院内系统页面，部分功能受限。点击下方「配置白名单」可添加启用站点。</span>
+    </div>
+    <div class="actions" id="actions"></div>
+    <div class="status-bar">
+      <span><span class="status-dot" id="statusDot"></span><span id="statusText">插件运行中</span></span>
+      <span id="currentDept">内科</span>
+    </div>
   </div>
 
   <script src="popup.js"></script>

@@ -61,10 +61,26 @@
           <div class="card patient-card">
             <div class="card-header">
               <h3>基本信息</h3>
-              <button class="link-btn" id="editBasicBtn">编辑</button>
+              <div class="card-actions">
+                <button class="link-btn" id="copySummaryBtn" title="复制结构化摘要">复制摘要</button>
+                <button class="link-btn" id="editBasicBtn">编辑</button>
+              </div>
             </div>
             <div class="patient-basic" id="patientBasic">
               <div class="info-empty">正在识别页面信息...</div>
+            </div>
+            <div class="summary-note" id="summaryNote" style="display:none;padding:10px 14px;border-top:1px solid var(--border-light);background:var(--bg-secondary);font-size:11px;color:var(--text-muted);">
+              ℹ️ 复制摘要时会自动隐藏手机号和身份证号
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>结构化门诊摘要</h3>
+              <button class="link-btn" id="genSummaryBtn">生成预览</button>
+            </div>
+            <div id="structuredSummary" class="structured-summary">
+              <div class="info-empty">点击「生成预览」查看完整结构化摘要</div>
             </div>
           </div>
 

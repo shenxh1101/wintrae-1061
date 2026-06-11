@@ -4,6 +4,9 @@
   let sidebarIframe = null;
   let sidebarContainer = null;
   let isSidebarVisible = false;
+  let siteEnabled = false;
+  let lastEditableElement = null;
+  let lastEditableInfo = null;
 
   const PRIVACY_PATTERNS = [
     /身份证[号号码]?[：:\s]*[0-9X]{15,19}/gi,
@@ -114,14 +117,58 @@
     document.body.appendChild(sidebarContainer);
   }
 
-  function toggleSidebar() {
+  function trackEditableFocus(e) {
+    const target = e.target;
+    if (!target) return;
+    const tag = target.tagName && target.tagName.toLowerCase();
+    const isInput = tag === 'textarea' || tag === 'input';
+    const isContentEditable = target.isContentEditable;
+    if (isInput || isContentEditable) {
+      lastEditableElement = target;
+      lastEditableInfo = {
+        tag,
+        isContentEditable,
+        id: target.id,
+        name: target.name,
+        className: target.className
+      };
+    }
+  }
+
+  function setupEditableTracking() {
+    document.addEventListener('focusin', trackEditableFocus, true);
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!target) return;
+      const tag = target.tagName && target.tagName.toLowerCase();
+      if (tag === 'textarea' || tag === 'input' || target.isContentEditable) {
+        trackEditableFocus(e);
+      }
+    }, true);
+  }
+
+  function toggleSidebar(options = {}) {
+    if (!siteEnabled && !options.force) {
+      if (!sidebarContainer) {
+        createSidebar();
+      }
+      isSidebarVisible = !isSidebarVisible;
+      if (isSidebarVisible) {
+        sidebarContainer.style.width = '420px';
+        sendMessageToSidebar({ type: 'SIDEBAR_OPENED', siteEnabled: false });
+      } else {
+        sidebarContainer.style.width = '0';
+      }
+      return;
+    }
+
     if (!sidebarContainer) {
       createSidebar();
     }
     isSidebarVisible = !isSidebarVisible;
     if (isSidebarVisible) {
       sidebarContainer.style.width = '420px';
-      sendMessageToSidebar({ type: 'SIDEBAR_OPENED' });
+      sendMessageToSidebar({ type: 'SIDEBAR_OPENED', siteEnabled: true });
     } else {
       sidebarContainer.style.width = '0';
       sendMessageToSidebar({ type: 'SIDEBAR_CLOSED' });
@@ -346,40 +393,84 @@
     sendMessageToSidebar({ type: 'PAGE_DATA', data });
   }
 
-  function insertTextAtCursor(text) {
-    const active = document.activeElement;
-    if (!active) return false;
-
-    const tag = active.tagName.toLowerCase();
-    if (tag === 'textarea' || tag === 'input') {
-      const start = active.selectionStart || 0;
-      const end = active.selectionEnd || 0;
-      const before = active.value.substring(0, start);
-      const after = active.value.substring(end);
-      active.value = before + text + after;
-      active.selectionStart = active.selectionEnd = start + text.length;
-      active.dispatchEvent(new Event('input', { bubbles: true }));
-      active.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    }
-
-    if (active.isContentEditable) {
-      const selection = window.getSelection();
-      if (selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        range.deleteContents();
-        const textNode = document.createTextNode(text);
-        range.insertNode(textNode);
-        range.setStartAfter(textNode);
-        range.setEndAfter(textNode);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        active.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      }
-    }
-
+  function isElementStillValid(el) {
+    if (!el) return false;
+    if (!document.body.contains(el)) return false;
+    const tag = el.tagName && el.tagName.toLowerCase();
+    if (tag === 'textarea' || tag === 'input') return true;
+    if (el.isContentEditable) return true;
     return false;
+  }
+
+  function findNearestEditable() {
+    const active = document.activeElement;
+    if (active && (active.tagName.toLowerCase() === 'textarea' || active.tagName.toLowerCase() === 'input' || active.isContentEditable)) {
+      return active;
+    }
+    if (isElementStillValid(lastEditableElement)) {
+      return lastEditableElement;
+    }
+    const textareas = document.querySelectorAll('textarea');
+    if (textareas.length > 0) return textareas[textareas.length - 1];
+    const inputs = document.querySelectorAll('input[type="text"]');
+    if (inputs.length > 0) return inputs[inputs.length - 1];
+    return null;
+  }
+
+  function insertTextAtCursor(text) {
+    let target = findNearestEditable();
+    if (!target) return { success: false, reason: 'no_editable' };
+
+    try {
+      if (!target.isConnected) {
+        target = findNearestEditable();
+        if (!target) return { success: false, reason: 'no_editable' };
+      }
+
+      const tag = target.tagName.toLowerCase();
+
+      if (tag === 'textarea' || tag === 'input') {
+        target.focus();
+        const start = target.selectionStart !== undefined ? target.selectionStart : target.value.length;
+        const end = target.selectionEnd !== undefined ? target.selectionEnd : target.value.length;
+        const before = target.value.substring(0, start);
+        const after = target.value.substring(end);
+        target.value = before + text + after;
+        target.selectionStart = target.selectionEnd = start + text.length;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        lastEditableElement = target;
+        return { success: true };
+      }
+
+      if (target.isContentEditable) {
+        target.focus();
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          if (!target.contains(range.startContainer)) {
+            range.selectNodeContents(target);
+            range.collapse(false);
+          }
+          range.deleteContents();
+          const textNode = document.createTextNode(text);
+          range.insertNode(textNode);
+          range.setStartAfter(textNode);
+          range.setEndAfter(textNode);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } else {
+          target.appendChild(document.createTextNode(text));
+        }
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        lastEditableElement = target;
+        return { success: true };
+      }
+
+      return { success: false, reason: 'unsupported_type' };
+    } catch (e) {
+      return { success: false, reason: 'error', message: e.message };
+    }
   }
 
   async function captureScreenshotWithPrivacy() {
@@ -494,14 +585,22 @@
       case 'REFRESH_DATA':
         extractAndSendPageData();
         break;
-      case 'INSERT_TEXT':
-        insertTextAtCursor(msg.text);
-        sendMessageToBackground({ type: 'ADD_HISTORY', action: '插入文本', detail: msg.text.substring(0, 50) });
+      case 'INSERT_TEXT': {
+        const result = insertTextAtCursor(msg.text);
+        if (result.success) {
+          sendMessageToBackground({ type: 'ADD_HISTORY', action: '插入文本', detail: msg.text.substring(0, 50) });
+          sendMessageToSidebar({ type: 'INSERT_RESULT', success: true });
+        } else {
+          sendMessageToSidebar({ type: 'INSERT_RESULT', success: false, reason: result.reason, fallbackText: msg.text });
+        }
         break;
+      }
       case 'COPY_TEXT':
         navigator.clipboard.writeText(msg.text).then(() => {
           sendMessageToSidebar({ type: 'COPY_SUCCESS' });
           sendMessageToBackground({ type: 'ADD_HISTORY', action: '复制文本', detail: msg.text.substring(0, 50) });
+        }).catch(() => {
+          sendMessageToSidebar({ type: 'COPY_FAILED' });
         });
         break;
       case 'CAPTURE_PRIVACY_SCREENSHOT':
@@ -519,20 +618,69 @@
       case 'CLOSE_SIDEBAR':
         toggleSidebar();
         break;
+      case 'OPEN_PANEL':
+        if (!isSidebarVisible) toggleSidebar({ force: true });
+        setTimeout(() => sendMessageToSidebar({ type: 'SWITCH_PANEL', panel: msg.panel }), 100);
+        break;
+      case 'QUERY_EDITOR_STATUS':
+        sendMessageToSidebar({
+          type: 'EDITOR_STATUS',
+          hasEditor: !!findNearestEditable(),
+          siteEnabled
+        });
+        break;
     }
   });
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.type === 'TOGGLE_SIDEBAR') {
-      toggleSidebar();
-      sendResponse({ success: true });
-    }
+    (async () => {
+      if (request.type === 'TOGGLE_SIDEBAR') {
+        if (!siteEnabled && !request.force) {
+          if (!sidebarContainer) createSidebar();
+          isSidebarVisible = !isSidebarVisible;
+          if (isSidebarVisible) {
+            sidebarContainer.style.width = '420px';
+            sendMessageToSidebar({ type: 'SIDEBAR_OPENED', siteEnabled: false });
+          } else {
+            sidebarContainer.style.width = '0';
+          }
+        } else {
+          toggleSidebar({ force: request.force });
+        }
+        if (request.panel && isSidebarVisible) {
+          setTimeout(() => sendMessageToSidebar({ type: 'SWITCH_PANEL', panel: request.panel }), 150);
+        }
+        if (request.modal && isSidebarVisible) {
+          setTimeout(() => sendMessageToSidebar({ type: `OPEN_${request.modal.toUpperCase()}` }), 200);
+        }
+        sendResponse({ success: true, siteEnabled });
+      } else if (request.type === 'CHECK_SITE_ENABLED') {
+        sendResponse({ success: true, enabled: siteEnabled });
+      } else if (request.type === 'DIRECT_CAPTURE') {
+        captureScreenshotWithPrivacy().then((dataUrl) => {
+          if (dataUrl) {
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = `医疗截图_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+            a.click();
+            sendMessageToBackground({ type: 'ADD_HISTORY', action: '截图', detail: '隐私遮挡截图已保存' });
+          }
+          sendResponse({ success: !!dataUrl });
+        });
+        return true;
+      } else if (request.type === 'DIRECT_REFRESH') {
+        extractAndSendPageData();
+        sendResponse({ success: true });
+      }
+    })();
     return true;
   });
 
   function init() {
+    setupEditableTracking();
     sendMessageToBackground({ type: 'IS_SITE_ENABLED', url: location.href }).then((resp) => {
-      if (resp && resp.enabled) {
+      siteEnabled = !!(resp && resp.enabled);
+      if (siteEnabled) {
         createFloatingButton();
       }
     });

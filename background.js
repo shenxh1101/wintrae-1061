@@ -192,8 +192,19 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === 'toggle-sidebar') {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && tab.id) {
-      chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR' });
+    if (tab && tab.id && tab.url) {
+      const enabled = await isSiteEnabled(tab.url);
+      if (enabled) {
+        chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR', force: true });
+      } else {
+        chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SIDEBAR', force: true, modal: 'SETTINGS' });
+        chrome.notifications?.create({
+          type: 'basic',
+          iconUrl: 'icons/icon48.png',
+          title: '智慧医疗助手',
+          message: '当前页面未在启用白名单，已打开设置页面'
+        });
+      }
     }
   }
 });

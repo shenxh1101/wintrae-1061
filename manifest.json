@@ -10,7 +10,8 @@
     "tabs",
     "clipboardWrite",
     "downloads",
-    "debugger"
+    "debugger",
+    "notifications"
   ],
   "host_permissions": [
     "http://*/*",

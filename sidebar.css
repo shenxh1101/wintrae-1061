@@ -882,3 +882,26 @@ body {
 .toast-danger {
   background: rgba(220, 38, 38, 0.92);
 }
+
+.structured-summary {
+  padding: 0;
+}
+
+.structured-summary pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.summary-note {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
